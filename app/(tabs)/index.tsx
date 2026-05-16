@@ -1,23 +1,32 @@
 import { useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
+import { supabase } from "../../lib/supabase";
 
 export default function Home() {
   const [search, setSearch] = useState("");
   const [result, setResult] = useState<any>(null);
 
-  const handleSearch = (text: string) => {
+  const handleSearch = async (text: string) => {
     setSearch(text);
 
-    if (text.toLowerCase().includes("guanabara")) {
-      setResult({
-        name: "Guanabara - Campo Grande",
-        status: "🟡 Fluxo moderado",
-        time: "10–15 min de espera",
-        trend: "📈 aumentando",
-      });
-    } else {
+    if (!text) {
       setResult(null);
+      return;
     }
+
+    const { data, error } = await supabase
+      .from("markets")
+      .select("*")
+      .ilike("name", `%${text}%`)
+      .single();
+
+    if (error) {
+      console.log("Erro Supabase:", error);
+      setResult(null);
+      return;
+    }
+
+    setResult(data);
   };
 
   return (
@@ -34,8 +43,8 @@ export default function Home() {
       {result && (
         <View style={styles.card}>
           <Text style={styles.name}>{result.name}</Text>
-          <Text>{result.status}</Text>
-          <Text>{result.time}</Text>
+          <Text>{result.flow}</Text>
+          <Text>{result.wait_time}</Text>
           <Text>{result.trend}</Text>
         </View>
       )}
