@@ -71,9 +71,9 @@ DECLARE
 BEGIN
   -- ── Score → minutos base (fórmula original, inalterada) ──────────────────
   v_base_minutes := CASE
-    WHEN p_score <= 35 THEN  5 + ROUND(( p_score::numeric          / 35)  *  5)  -- 5–10 min
-    WHEN p_score <= 70 THEN 12 + ROUND(((p_score - 36)::numeric    / 34)  *  8)  -- 12–20 min
-    ELSE                     25 + ROUND(((p_score - 71)::numeric   / 29)  * 15)  -- 25–40 min
+    WHEN p_score <= 55 THEN  5 + ROUND(( p_score::numeric          / 55)  *  5)  -- 5–10 min
+    WHEN p_score <= 75 THEN 12 + ROUND(((p_score - 56)::numeric    / 19)  *  8)  -- 12–20 min
+    ELSE                     25 + ROUND(((p_score - 76)::numeric   / 24)  * 15)  -- 25–40 min
   END;
 
   -- ── Ajuste por checkout_count ─────────────────────────────────────────────

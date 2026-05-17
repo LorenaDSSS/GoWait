@@ -12,7 +12,7 @@
 -- 1. Adicionar coluna feedback_value (nullable — só preenchida em event feedback)
 ALTER TABLE location_user_signals
   ADD COLUMN IF NOT EXISTS feedback_value text
-  CHECK (feedback_value IN ('vazio', 'normal', 'cheio'));
+  CHECK (feedback_value IN ('tranquilo', 'moderado', 'cheio'));
 
 -- 2. Adicionar 'feedback' como event_type válido
 --    Recria o CHECK sem precisar dropar a coluna
@@ -36,15 +36,15 @@ SELECT
   lus.hour_of_day,
   lus.day_of_week,
   COUNT(*)                                                        AS total_feedbacks,
-  COUNT(*) FILTER (WHERE lus.feedback_value = 'vazio')           AS count_vazio,
-  COUNT(*) FILTER (WHERE lus.feedback_value = 'normal')          AS count_normal,
+  COUNT(*) FILTER (WHERE lus.feedback_value = 'tranquilo')       AS count_tranquilo,
+  COUNT(*) FILTER (WHERE lus.feedback_value = 'moderado')        AS count_moderado,
   COUNT(*) FILTER (WHERE lus.feedback_value = 'cheio')           AS count_cheio,
-  -- Score médio percebido pelo usuário: vazio=15, normal=50, cheio=85
+  -- Score médio percebido pelo usuário: tranquilo=15, moderado=50, cheio=85
   ROUND(AVG(
     CASE lus.feedback_value
-      WHEN 'vazio'  THEN 15
-      WHEN 'normal' THEN 50
-      WHEN 'cheio'  THEN 85
+      WHEN 'tranquilo' THEN 15
+      WHEN 'moderado'  THEN 50
+      WHEN 'cheio'     THEN 85
     END
   ), 1)                                                           AS avg_perceived_score,
   -- Score heurístico médio no momento do feedback (para comparar divergência)

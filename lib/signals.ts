@@ -19,7 +19,7 @@ export type SignalEvent =
 
 export type SignalSource = "nearby" | "search" | "map" | "recommendation";
 
-export type FeedbackValue = "vazio" | "normal" | "cheio";
+export type FeedbackValue = "tranquilo" | "moderado" | "cheio";
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
