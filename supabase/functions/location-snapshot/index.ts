@@ -37,6 +37,19 @@ interface Market {
   location_context:   string;
   checkout_count:     number | null;
   slug:               string;
+  city:               string | null;
+}
+
+// Extrai o município de "Bairro, Município - UF" → "Município"
+// Ex: "Catete, Rio de Janeiro - RJ" → "Rio de Janeiro"
+// Ex: "Rio de Janeiro" → "Rio de Janeiro" (fallback sem vírgula)
+function extractMunicipio(city: string | null | undefined): string | null {
+  if (!city) return null;
+  const comma = city.indexOf(",");
+  const dash  = city.lastIndexOf(" - ");
+  const start = comma === -1 ? 0 : comma + 1;
+  const end   = dash  === -1 ? city.length : dash;
+  return city.slice(start, end).trim() || null;
 }
 
 interface IntelEntry {
@@ -218,20 +231,22 @@ Deno.serve(async () => {
   const isHoliday  = false; // TODO: integrar API de feriados
 
   try {
-    // 1. Ler condição climática atual (máx 2h)
+    // 1. Carregar mapa de clima por município (máx 2h)
     const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString();
     const { data: weatherRows } = await supabase
       .from("weather_cache")
-      .select("condition")
-      .gte("updated_at", twoHoursAgo)
-      .order("updated_at", { ascending: false })
-      .limit(1);
-    const weather: string | null = weatherRows?.[0]?.condition ?? null;
+      .select("city, condition")
+      .gte("updated_at", twoHoursAgo);
+    // Map: "Rio de Janeiro" → "rain" | "cold" | "hot" | "clear"
+    const weatherMap = new Map<string, string>();
+    for (const row of (weatherRows ?? [])) {
+      if (row.city) weatherMap.set(row.city, row.condition);
+    }
 
     // 2. Carregar locais
     const { data: locations, error: mErr } = await supabase
       .from("locations")
-      .select("id, size, segment, vertical, price_level, base_crowd_factor, location_context, checkout_count, slug");
+      .select("id, size, segment, vertical, price_level, base_crowd_factor, location_context, checkout_count, slug, city");
     if (mErr) throw mErr;
 
     // 3. Carregar intelligence em batch (uma query para todos os locais)
@@ -250,6 +265,10 @@ Deno.serve(async () => {
     const updates = [];
 
     for (const location of locations as Market[]) {
+      // Clima do município do local (fallback null = sem efeito no score)
+      const municipio = extractMunicipio(location.city);
+      const weather   = municipio ? (weatherMap.get(municipio) ?? null) : null;
+
       // Score heurístico puro — vai para location_metrics (input da IA)
       const heuristic_score = calculateCrowdScore(location, now, isHoliday, weather);
       const score_next      = predictNextScore(location, now, isHoliday);

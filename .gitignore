@@ -45,6 +45,10 @@ app-example
 # Supabase
 supabase/.temp/
 
+# Scripts — cache e outputs gerados automaticamente
+scripts/output/overpass_cache.json
+scripts/output/nominatim_cache.json
+
 # Editor swap files
 *.swp
 *.swo

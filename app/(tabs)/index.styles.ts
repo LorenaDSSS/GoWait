@@ -51,6 +51,7 @@ export const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 6,
     elevation: 2,
+    alignSelf: "stretch",
   },
   mapContainer: {
     width: "100%",
@@ -208,6 +209,11 @@ export const styles = StyleSheet.create({
   marketRowDecision: {
     fontSize: 13,
     color: "#666",
+  },
+  marketRowCity: {
+    fontSize: 12,
+    color: "#aaa",
+    marginTop: 1,
   },
   emptyText: {
     fontSize: 14,
@@ -437,6 +443,7 @@ export const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderBottomWidth: 1,
+    overflow: "hidden",
     borderBottomColor: "#F0F0F0",
   },
   searchResultRowActive: {
@@ -446,8 +453,13 @@ export const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "#1A1A1A",
-    marginLeft: 10,
     flex: 1,
+  },
+  searchResultCity: {
+    fontSize: 12,
+    color: "#888",
+    marginLeft: 10,
+    marginTop: 1,
   },
   // Botão voltar herdado (mantido por compat) — use voltarBtn no fluxo principal
   backBtn: {

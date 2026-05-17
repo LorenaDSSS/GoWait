@@ -202,6 +202,9 @@ function isMarketDataStale(market: any, isClosed: boolean): boolean {
   const openToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), oh, om, 0);
   return snapshotDate < openToday;
 }
+const NEARBY_RADIUS_KM = 3.5;
+const NEARBY_MAX       = 10;
+
 function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -217,6 +220,13 @@ function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
 function formatDistance(km: number) {
   if (km < 1) return `${Math.round(km * 1000)} m`;
   return `${km.toFixed(1)} km`;
+}
+
+// "Ingá, Niterói - RJ" → "Niterói - RJ" | "Rio de Janeiro - RJ" → "Rio de Janeiro - RJ"
+function formatCityLabel(city: string | null | undefined): string | null {
+  if (!city) return null;
+  const comma = city.indexOf(",");
+  return comma === -1 ? city : city.slice(comma + 1).trim();
 }
 
 // crowd_score, trend, flow, wait_time e snapshot_at são escritos direto
@@ -330,6 +340,13 @@ function MarketRow({ item, isSelected, onPress }: MarketRowProps) {
         ) : (
           <Text style={styles.marketRowDecision}>{getDecision(item.flow)}</Text>
         )}
+        {item.city ? (
+          <Text style={styles.marketRowCity} numberOfLines={1}>
+            {item.city}{item.dist != null ? `  ·  ${formatDistance(item.dist)}` : ""}
+          </Text>
+        ) : item.dist != null ? (
+          <Text style={styles.marketRowCity}>{formatDistance(item.dist)}</Text>
+        ) : null}
       </View>
     </TouchableOpacity>
   );
@@ -560,11 +577,12 @@ export default function Home() {
           if (coords) {
             const sorted = [...enriched]
               .map((m: any) => ({ ...m, dist: haversine(coords.latitude, coords.longitude, m.latitude, m.longitude) }))
+              .filter((m: any) => m.dist <= NEARBY_RADIUS_KM)
               .sort((a: any, b: any) => a.dist - b.dist)
-              .slice(0, 5);
+              .slice(0, NEARBY_MAX);
             setNearbyMarkets(sorted);
           } else {
-            setNearbyMarkets(enriched.slice(0, 5));
+            setNearbyMarkets(enriched.slice(0, NEARBY_MAX));
           }
           // Atualiza o mercado selecionado se estiver aberto
           setSelectedMarket((prev: any) => {
@@ -590,11 +608,12 @@ export default function Home() {
       userCoordsRef.current = { latitude, longitude };
       const sorted = [...enriched]
         .map((m) => ({ ...m, dist: haversine(latitude, longitude, m.latitude, m.longitude) }))
+        .filter((m) => m.dist <= NEARBY_RADIUS_KM)
         .sort((a, b) => a.dist - b.dist)
-        .slice(0, 5);
+        .slice(0, NEARBY_MAX);
       setNearbyMarkets(sorted);
     } else {
-      setNearbyMarkets(enriched.slice(0, 5));
+      setNearbyMarkets(enriched.slice(0, NEARBY_MAX));
     }
     setLoadingLocation(false);
   };
@@ -634,7 +653,8 @@ export default function Home() {
     const { data } = await supabase
       .from("locations")
       .select("*")
-      .ilike("name", `%${text}%`);
+      .or(`name.ilike.%${text}%,city.ilike.%${text}%`)
+      .limit(8);
 
     const markets = data || [];
     const enriched = enrichMarkets(markets);
@@ -671,11 +691,22 @@ export default function Home() {
         placeholderTextColor="#999"
         value={search}
         onChangeText={handleSearch}
+        onSubmitEditing={() => {
+          if (results.length > 0) {
+            const first = results[0];
+            setSearch(first.name);
+            setResults([]);
+            handleSelect(first, "search");
+          }
+        }}
+        returnKeyType="search"
+        blurOnSubmit
       />
 
       {/* Resultados de busca — dropdown compacto acima do mapa */}
       {isSearching && results.length > 0 && (
         <View style={styles.searchResults}>
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           {results.map((item) => {
               const locStatus = getLocationStatus(item);
               const closed    = locStatus.status === "closed";
@@ -696,10 +727,15 @@ export default function Home() {
                   activeOpacity={0.7}
                 >
                   <PulsingDot color={dotColor} />
-                  <Text style={styles.searchResultName}>{item.name}</Text>
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.searchResultName} numberOfLines={1}>
+                      {item.name}{item.city ? `, ${formatCityLabel(item.city)}` : ""}
+                    </Text>
+                  </View>
                 </TouchableOpacity>
               );
             })}
+          </ScrollView>
         </View>
       )}
 
