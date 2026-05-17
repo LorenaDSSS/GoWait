@@ -25,11 +25,21 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// Cidades a monitorar.
-// Coordenadas são mais precisas que nome de cidade para bairros.
-// Campo Grande / Rio de Janeiro — cobre as 3 lojas cadastradas.
-const CITIES = [
-  { key: "campo_grande_rj", lat: -22.9054, lon: -43.5636 },
+// Municípios a monitorar — um registro por município em weather_cache.
+// Coordenadas são mais precisas que nome de cidade para OWM.
+const CITIES: { city: string; lat: number; lon: number }[] = [
+  { city: "Rio de Janeiro",     lat: -22.9068, lon: -43.1729 },
+  { city: "Niterói",            lat: -22.8832, lon: -43.1036 },
+  { city: "Duque de Caxias",    lat: -22.7856, lon: -43.3175 },
+  { city: "Nova Iguaçu",        lat: -22.7592, lon: -43.4511 },
+  { city: "São João de Meriti", lat: -22.8039, lon: -43.3659 },
+  { city: "Belford Roxo",       lat: -22.7636, lon: -43.3997 },
+  { city: "Mesquita",           lat: -22.7981, lon: -43.4341 },
+  { city: "Queimados",          lat: -22.7122, lon: -43.5561 },
+  { city: "São Gonçalo",        lat: -22.8268, lon: -43.0534 },
+  { city: "Seropédica",         lat: -22.7447, lon: -43.7074 },
+  { city: "Itaguaí",            lat: -22.8610, lon: -43.7771 },
+  { city: "Nilópolis",          lat: -22.8061, lon: -43.4209 },
 ];
 
 // Temperatura limite para classificação de frio/calor
@@ -80,17 +90,17 @@ Deno.serve(async () => {
       const condition = classifyCondition(rawMain, tempC);
 
       const { error } = await supabase.from("weather_cache").upsert(
-        { city: city.key, condition, temp_c: tempC, raw_main: rawMain, updated_at: new Date().toISOString() },
+        { city: city.city, condition, temp_c: tempC, raw_main: rawMain, updated_at: new Date().toISOString() },
         { onConflict: "city" },
       );
 
       if (error) {
-        results.push({ city: city.key, error: error.message });
+        results.push({ city: city.city, error: error.message });
       } else {
-        results.push({ city: city.key, condition, temp_c: tempC, raw_main: rawMain });
+        results.push({ city: city.city, condition, temp_c: tempC, raw_main: rawMain });
       }
     } catch (err) {
-      results.push({ city: city.key, error: String(err) });
+      results.push({ city: city.city, error: String(err) });
     }
   }
 
