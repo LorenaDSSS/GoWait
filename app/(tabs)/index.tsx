@@ -5,6 +5,8 @@ import {
   Animated,
   Easing,
   Linking,
+  Modal,
+  Pressable,
   ScrollView,
   Text,
   TextInput,
@@ -26,85 +28,46 @@ const LOCATION_CONTEXT = [
 ];
 
 const INTERVAL_MS = 3500;
-const ANIM_OUT_MS = 380;
-const ANIM_IN_MS  = 460;
+const ANIM_OUT_MS = 430;
+const ANIM_IN_MS  = 540;
 const SLIDE_PX    = 14;
 
-// ─── Subtitle com cross-fade A/B + slide vertical ───────────────────────────
+// ─── Subtitle com fade + slide apenas na palavra variável ──────────────────
 function AnimatedSubtitle() {
-  const currentRef  = useRef(0);
-  const showingARef = useRef(true);
-
-  const [idxA, setIdxA] = useState(0);
-  const [idxB, setIdxB] = useState(1);
-
-  const opA = useRef(new Animated.Value(1)).current;
-  const tyA = useRef(new Animated.Value(0)).current;
-  const opB = useRef(new Animated.Value(0)).current;
-  const tyB = useRef(new Animated.Value(SLIDE_PX)).current;
+  const [wordIndex, setWordIndex] = useState(0);
+  const opacity    = useRef(new Animated.Value(1)).current;
+  const translateY = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const ease = Easing.out(Easing.cubic);
 
     const timer = setInterval(() => {
-      const next = (currentRef.current + 1) % LOCATION_CONTEXT.length;
-
-      if (showingARef.current) {
-        setIdxB(next);
-        tyB.setValue(SLIDE_PX);
-        opB.setValue(0);
+      // Fase 1: sai (fade out + sobe)
+      Animated.parallel([
+        Animated.timing(opacity,    { toValue: 0,        duration: ANIM_OUT_MS, easing: ease, useNativeDriver: true }),
+        Animated.timing(translateY, { toValue: -SLIDE_PX, duration: ANIM_OUT_MS, easing: ease, useNativeDriver: true }),
+      ]).start(() => {
+        // Troca o texto enquanto está invisível
+        setWordIndex(prev => (prev + 1) % LOCATION_CONTEXT.length);
+        translateY.setValue(SLIDE_PX); // posiciona abaixo
+        // Fase 2: entra (fade in + sobe até centro)
         Animated.parallel([
-          Animated.timing(opA, { toValue: 0,        duration: ANIM_OUT_MS, easing: ease, useNativeDriver: true }),
-          Animated.timing(tyA, { toValue: -SLIDE_PX, duration: ANIM_OUT_MS, easing: ease, useNativeDriver: true }),
-          Animated.timing(opB, { toValue: 1,         duration: ANIM_IN_MS,  easing: ease, useNativeDriver: true }),
-          Animated.timing(tyB, { toValue: 0,         duration: ANIM_IN_MS,  easing: ease, useNativeDriver: true }),
-        ]).start(() => {
-          currentRef.current = next;
-          showingARef.current = false;
-          tyA.setValue(SLIDE_PX);
-        });
-      } else {
-        setIdxA(next);
-        tyA.setValue(SLIDE_PX);
-        opA.setValue(0);
-        Animated.parallel([
-          Animated.timing(opB, { toValue: 0,        duration: ANIM_OUT_MS, easing: ease, useNativeDriver: true }),
-          Animated.timing(tyB, { toValue: -SLIDE_PX, duration: ANIM_OUT_MS, easing: ease, useNativeDriver: true }),
-          Animated.timing(opA, { toValue: 1,         duration: ANIM_IN_MS,  easing: ease, useNativeDriver: true }),
-          Animated.timing(tyA, { toValue: 0,         duration: ANIM_IN_MS,  easing: ease, useNativeDriver: true }),
-        ]).start(() => {
-          currentRef.current = next;
-          showingARef.current = true;
-          tyB.setValue(SLIDE_PX);
-        });
-      }
+          Animated.timing(opacity,    { toValue: 1, duration: ANIM_IN_MS, easing: ease, useNativeDriver: true }),
+          Animated.timing(translateY, { toValue: 0, duration: ANIM_IN_MS, easing: ease, useNativeDriver: true }),
+        ]).start();
+      });
     }, INTERVAL_MS);
 
     return () => clearInterval(timer);
   }, []);
 
-  const ctxA = LOCATION_CONTEXT[idxA];
-  const ctxB = LOCATION_CONTEXT[idxB];
-
-  const renderContent = (ctx: (typeof LOCATION_CONTEXT)[0]) => (
-    <>
-      <Text style={styles.subtitleStatic}>Descubra se vale a pena ir </Text>
-      <Text style={styles.subtitleWord}>{ctx.prep} {ctx.word}</Text>
-      <Text style={styles.subtitleStatic}> agora</Text>
-    </>
-  );
+  const ctx = LOCATION_CONTEXT[wordIndex];
 
   return (
     <View style={styles.subtitleContainer}>
-      {/* Espaçador invisível para reservar a altura do container */}
-      <Text style={[styles.subtitleStatic, styles.subtitleSpacer]}>
-        {"Descubra se vale a pena ir\nà farmácia agora"}
-      </Text>
-      <Animated.Text style={[styles.subtitleLayer, { opacity: opA, transform: [{ translateY: tyA }] }]}>
-        {renderContent(ctxA)}
-      </Animated.Text>
-      <Animated.Text style={[styles.subtitleLayer, { opacity: opB, transform: [{ translateY: tyB }] }]}>
-        {renderContent(ctxB)}
+      <Text style={styles.subtitleStatic}>Descubra se vale a pena ir </Text>
+      <Animated.Text style={[styles.subtitleWord, { opacity, transform: [{ translateY }] }]}>
+        {ctx.prep} {ctx.word}<Text style={styles.subtitleStatic}> agora</Text>
       </Animated.Text>
     </View>
   );
@@ -143,6 +106,60 @@ function PulsingDot({ color }: { color: string }) {
 }
 
 // ─── Helpers (fora do componente) ────────────────────────────────────────────
+
+// Calcula status de funcionamento a partir dos dados do location
+// (lê opening_hours e closing_buffer_minutes — já vêm no objeto market)
+type LocationStatus =
+  | { status: "open" }
+  | { status: "closing_soon"; closesInMinutes: number }
+  | { status: "closed"; opensAt: string | null };
+
+function getLocationStatus(market: any): LocationStatus {
+  const hours  = market.opening_hours as Record<string, any> | null;
+  const buffer = (market.closing_buffer_minutes as number) ?? 0;
+  const DAYS   = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+  const now    = new Date();
+  const nowMs  = (now.getHours() * 60 + now.getMinutes()) * 60000;
+  const key    = DAYS[now.getDay()];
+  const day    = hours?.[key] ?? hours?.["default"];
+
+  // Calcula abertura/fechamento localmente — não depende de is_open do banco.
+  // Isso elimina o delay de até 15 min entre o pg_cron atualizar is_open
+  // e o app refletir o estado real da loja.
+  if (day && !day.closed && day.open && day.close) {
+    const [oh, om] = (day.open  as string).split(":").map(Number);
+    const [ch, cm] = (day.close as string).split(":").map(Number);
+    const openMs   = (oh * 60 + om) * 60000;
+    const closeMs  = (ch * 60 + cm) * 60000;
+
+    // Antes do horário de abertura → fechado
+    if (nowMs < openMs) {
+      return { status: "closed", opensAt: day.open };
+    }
+
+    // Após o horário de fechamento (com buffer) → fechado
+    if (nowMs >= closeMs + buffer * 60000) {
+      // Tenta mostrar a abertura do dia seguinte
+      const nextKey = DAYS[(now.getDay() + 1) % 7];
+      const nextDay = hours?.[nextKey] ?? hours?.["default"];
+      return { status: "closed", opensAt: nextDay?.open ?? day.open ?? null };
+    }
+
+    // Dentro da janela de aviso de fechamento
+    const minsLeft = Math.round((closeMs + buffer * 60000 - nowMs) / 60000);
+    if (minsLeft > 0 && minsLeft <= Math.max(30, buffer)) {
+      return { status: "closing_soon", closesInMinutes: minsLeft };
+    }
+
+    return { status: "open" };
+  }
+
+  // Sem opening_hours cadastrado: confia em is_open do banco como fallback
+  if (market.is_open === false) {
+    return { status: "closed", opensAt: null };
+  }
+  return { status: "open" };
+}
 
 function getDecision(flow: string) {
   if (flow === "baixo") return "Vale a pena ir agora";
@@ -187,26 +204,12 @@ function formatDistance(km: number) {
   return `${km.toFixed(1)} km`;
 }
 
-// Busca o snapshot mais recente de cada local em location_metrics
-async function fetchLatestMetrics(locationIds: string[]) {
-  if (!locationIds.length) return new Map<string, any>();
-  const { data } = await supabase
-    .from("location_metrics")
-    .select("location_id, crowd_score, created_at")
-    .in("location_id", locationIds)
-    .order("created_at", { ascending: false });
-  const map = new Map<string, any>();
-  for (const m of (data || [])) {
-    if (!map.has(m.location_id)) map.set(m.location_id, m);
-  }
-  return map;
-}
-
-function enrichMarkets(locations: any[], metricsMap: Map<string, any>) {
+// crowd_score, trend, flow, wait_time e snapshot_at são escritos direto
+// em locations pelo run_location_snapshot() → nenhuma query extra necessária.
+function enrichMarkets(locations: any[]) {
   return locations.map((m) => ({
     ...m,
-    crowd_score: metricsMap.get(m.id)?.crowd_score ?? null,
-    last_snapshot_at: metricsMap.get(m.id)?.created_at ?? null,
+    last_snapshot_at: m.snapshot_at ?? null,
   }));
 }
 
@@ -216,19 +219,106 @@ function formatSnapshotTime(iso: string | null) {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+// ─── Tooltip modal para chips informativos ────────────────────────────────────
+type ChipTooltip = { title: string; body: string };
+
+const CHIP_INFO: Record<string, ChipTooltip> = {
+  fluxo: {
+    title: "Fluxo",
+    body: "Indica o nível de movimento do local agora.\n\n" +
+      "• Fluido — poucas pessoas, sem espera\n" +
+      "• Ativo — movimento moderado, pode ter fila curta\n" +
+      "• Intenso — local com muita gente, espera provável",
+  },
+  tendencia: {
+    title: "Tendência",
+    body: "Indica se o fluxo vai aumentar ou diminuir na próxima hora.\n\n" +
+      "• Subindo — vai ficar mais cheio em breve\n" +
+      "• Estável — movimento deve se manter\n" +
+      "• Caindo — deve esvaziar na próxima hora",
+  },
+  score: {
+    title: "Score",
+    body: "Pontuação de lotação estimada, de 0 a 100.\n\n" +
+      "Calculada com base no horário, dia da semana, tipo e tamanho do local.",
+  },
+  scoreIA: {
+    title: "Score IA",
+    body: "Pontuação inteligente que combina três fontes:\n\n" +
+      "• Previsão heurística (horário, dia, tipo de local)\n" +
+      "• Comportamento real dos usuários (cliques, tempo de visualização)\n" +
+      "• Relatos diretos de quem visitou o local\n\n" +
+      "Quanto mais pessoas interagem, mais preciso fica.",
+  },
+};
+
+function ChipWithTooltip({
+  label,
+  value,
+  valueColor,
+  tooltipKey,
+}: {
+  label: string;
+  value: string;
+  valueColor?: string;
+  tooltipKey: string;
+}) {
+  const [visible, setVisible] = useState(false);
+  const info = CHIP_INFO[tooltipKey];
+  return (
+    <>
+      <TouchableOpacity
+        style={styles.reportChip}
+        onPress={() => setVisible(true)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.chipLabelRow}>
+          <Text style={styles.chipLabel}>{label}</Text>
+          <Text style={styles.chipHint}> ⓘ</Text>
+        </View>
+        <Text style={[styles.chipValue, valueColor ? { color: valueColor } : undefined]} numberOfLines={1}>
+          {value}
+        </Text>
+      </TouchableOpacity>
+
+      <Modal transparent animationType="fade" visible={visible} onRequestClose={() => setVisible(false)}>
+        <Pressable style={styles.tooltipOverlay} onPress={() => setVisible(false)}>
+          <Pressable style={styles.tooltipCard} onPress={() => {}}>
+            <Text style={styles.tooltipTitle}>{info?.title}</Text>
+            <Text style={styles.tooltipBody}>{info?.body}</Text>
+            <TouchableOpacity onPress={() => setVisible(false)} style={styles.tooltipClose}>
+              <Text style={styles.tooltipCloseText}>Fechar</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </>
+  );
+}
+
 // Definido fora do componente para evitar re-criação a cada render
 type MarketRowProps = { item: any; isSelected: boolean; onPress: () => void };
 function MarketRow({ item, isSelected, onPress }: MarketRowProps) {
+  const locStatus = getLocationStatus(item);
+  const closed    = locStatus.status === "closed";
   return (
     <TouchableOpacity
-      style={[styles.marketRow, isSelected && styles.marketRowActive]}
+      style={[styles.marketRow, isSelected && styles.marketRowActive, closed && styles.marketRowClosed]}
       onPress={onPress}
       activeOpacity={0.7}
     >
-      <PulsingDot color={getFlowColor(item.flow)} />
+      <PulsingDot color={closed ? "#C8CDD8" : getFlowColor(item.flow)} />
       <View style={styles.marketRowText}>
-        <Text style={styles.marketRowName}>{item.name}</Text>
-        <Text style={styles.marketRowDecision}>{getDecision(item.flow)}</Text>
+        <Text style={[styles.marketRowName, closed && styles.marketRowNameClosed]}>{item.name}</Text>
+        {closed ? (
+          <Text style={styles.marketRowClosedLabel}>
+            {(locStatus as any).opensAt
+              ? `Fechado · Abre às ${(locStatus as any).opensAt}`
+              : "Fechado agora"}
+          </Text>
+        ) : (
+          <Text style={styles.marketRowDecision}>{getDecision(item.flow)}</Text>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -249,6 +339,8 @@ function MarketDashboard({ market, source }: MarketDashboardProps) {
   const snapshotTime  = formatSnapshotTime(market.last_snapshot_at ?? null);
   const mountTimeRef  = useRef(Date.now());
   const [localFeedback, setLocalFeedback] = useState<FeedbackValue | null>(null);
+  const locationStatus = getLocationStatus(market);
+  const isClosed       = locationStatus.status === "closed";
 
   // Registra dwell time quando o dashboard é fechado
   useEffect(() => {
@@ -268,33 +360,44 @@ function MarketDashboard({ market, source }: MarketDashboardProps) {
   return (
     <View style={{ flex: 1 }}>
       <View style={styles.report}>
+        {/* Badge de horário — fechado ou fechando em breve */}
+        {locationStatus.status === "closed" && (
+          <View style={styles.closedBadge}>
+            <Text style={styles.closedBadgeText}>
+              {(locationStatus as any).opensAt
+                ? `Fechado · Abre às ${(locationStatus as any).opensAt}`
+                : "Fechado agora"}
+            </Text>
+          </View>
+        )}
+        {locationStatus.status === "closing_soon" && (
+          <View style={styles.closingSoonBadge}>
+            <Text style={styles.closingSoonBadgeText}>
+              Fecha em {(locationStatus as any).closesInMinutes} min
+            </Text>
+          </View>
+        )}
+
         <Text style={styles.reportName}>{market.name}</Text>
         <View style={styles.reportRow}>
-          <View style={styles.reportChip}>
-            <Text style={styles.chipLabel}>Fluxo</Text>
-            <Text
-              style={[styles.chipValue, { color: getFlowColor(market.flow) }]}
-              numberOfLines={1}
-            >
-              {getFlowLabel(market.flow ?? "")}
-            </Text>
-          </View>
-          <View style={styles.reportChip}>
-            <Text style={styles.chipLabel}>Tendência</Text>
-            <Text style={styles.chipValue} numberOfLines={1}>
-              {market.trend ?? "—"}
-            </Text>
-          </View>
-          {market.crowd_score != null && (
-            <View style={styles.reportChip}>
-              <Text style={styles.chipLabel}>Score</Text>
-              <Text
-                style={[styles.chipValue, { color: getFlowColor(market.flow) }]}
-                numberOfLines={1}
-              >
-                {market.crowd_score}/100
-              </Text>
-            </View>
+          <ChipWithTooltip
+            label="Fluxo"
+            value={getFlowLabel(market.flow ?? "")}
+            valueColor={getFlowColor(market.flow)}
+            tooltipKey="fluxo"
+          />
+          <ChipWithTooltip
+            label="Tendência"
+            value={market.trend ?? "—"}
+            tooltipKey="tendencia"
+          />
+          {(market.intelligence_score ?? market.crowd_score) != null && (
+            <ChipWithTooltip
+              label={market.intelligence_score != null ? "Score IA" : "Score"}
+              value={`${(market.intelligence_score ?? market.crowd_score)}/100`}
+              valueColor={getFlowColor(market.flow)}
+              tooltipKey={market.intelligence_score != null ? "scoreIA" : "score"}
+            />
           )}
         </View>
         <View style={styles.divider} />
@@ -303,49 +406,52 @@ function MarketDashboard({ market, source }: MarketDashboardProps) {
           {"⏱ " + getWaitMessage(market.flow ?? "", market.wait_time ?? "")}
         </Text>
 
-        {/* Relato inline — dado mais valioso: usuário informa como está agora */}
-        <View style={styles.inlineReportSection}>
-          {localFeedback ? (
-            <Text
-              style={[
-                styles.inlineReportConfirm,
-                { color: FEEDBACK_OPTIONS.find((o) => o.value === localFeedback)?.color },
-              ]}
-            >
-              ✓ Obrigado pelo relato!
-            </Text>
-          ) : (
-            <>
-              <Text style={styles.inlineReportLabel}>Como está agora?</Text>
-              <View style={styles.inlineReportBtns}>
-                {FEEDBACK_OPTIONS.map((opt) => (
-                  <TouchableOpacity
-                    key={opt.value}
-                    style={[styles.inlineReportBtn, { borderColor: opt.color }]}
-                    onPress={() => {
-                      setLocalFeedback(opt.value);
-                      trackFeedback(
-                        market.id,
-                        opt.value,
-                        market.flow ?? null,
-                        market.crowd_score ?? null,
-                      );
-                    }}
-                    activeOpacity={0.75}
-                  >
-                    <View style={[styles.feedbackDot, { backgroundColor: opt.color }]} />
-                    <Text style={styles.inlineReportBtnText}>{opt.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </>
-          )}
-        </View>
+        {/* Relato inline — só exibido quando o local está aberto */}
+        {!isClosed && (
+          <View style={styles.inlineReportSection}>
+            {localFeedback ? (
+              <Text
+                style={[
+                  styles.inlineReportConfirm,
+                  { color: FEEDBACK_OPTIONS.find((o) => o.value === localFeedback)?.color },
+                ]}
+              >
+                ✓ Obrigado pelo relato!
+              </Text>
+            ) : (
+              <>
+                <Text style={styles.inlineReportLabel}>Como está o fluxo agora?</Text>
+                <View style={styles.inlineReportBtns}>
+                  {FEEDBACK_OPTIONS.map((opt) => (
+                    <TouchableOpacity
+                      key={opt.value}
+                      style={[styles.inlineReportBtn, { borderColor: opt.color }]}
+                      onPress={() => {
+                        setLocalFeedback(opt.value);
+                        trackFeedback(
+                          market.id,
+                          opt.value,
+                          market.flow ?? null,
+                          market.crowd_score ?? null,
+                        );
+                      }}
+                      activeOpacity={0.75}
+                    >
+                      <View style={[styles.feedbackDot, { backgroundColor: opt.color }]} />
+                      <Text style={styles.inlineReportBtnText}>{opt.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
+          </View>
+        )}
 
-        {/* CTA principal — sinal de maior intenção */}
+        {/* CTA principal — desabilitado se fechado */}
         <TouchableOpacity
-          style={styles.navigateBtn}
-          activeOpacity={0.82}
+          style={[styles.navigateBtn, isClosed && styles.navigateBtnDisabled]}
+          activeOpacity={isClosed ? 1 : 0.82}
+          disabled={isClosed}
           onPress={() => {
             trackSignal({
               location_id:    market.id,
@@ -418,8 +524,7 @@ export default function Home() {
         async () => {
           const { data } = await supabase.from("locations").select("*");
           const markets = data || [];
-          const metricsMap = await fetchLatestMetrics(markets.map((m: any) => m.id));
-          const enriched = enrichMarkets(markets, metricsMap);
+          const enriched = enrichMarkets(markets);
           const coords = userCoordsRef.current;
           if (coords) {
             const sorted = [...enriched]
@@ -444,8 +549,7 @@ export default function Home() {
   const loadAll = async () => {
     const { data } = await supabase.from("locations").select("*");
     const markets = data || [];
-    const metricsMap = await fetchLatestMetrics(markets.map((m: any) => m.id));
-    const enriched = enrichMarkets(markets, metricsMap);
+    const enriched = enrichMarkets(markets);
 
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status === "granted") {
@@ -502,8 +606,7 @@ export default function Home() {
       .ilike("name", `%${text}%`);
 
     const markets = data || [];
-    const metricsMap = await fetchLatestMetrics(markets.map((m: any) => m.id));
-    const enriched = enrichMarkets(markets, metricsMap);
+    const enriched = enrichMarkets(markets);
     setResults(enriched);
 
     // Registra sinal de busca para cada local encontrado (mínimo 3 chars para evitar ruído)

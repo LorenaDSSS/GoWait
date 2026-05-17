@@ -25,35 +25,21 @@ export const styles = StyleSheet.create({
   },
   subtitleStatic: {
     fontSize: 15,
-    color: "#3970c3",
+    color: "#666",
     lineHeight: 22,
   },
   subtitleWord: {
     fontFamily: "SpaceGrotesk_600SemiBold",
     fontWeight: "600",
-    color: "#152965",
+    color: "#3970c3",
     fontSize: 15,
     lineHeight: 22,
   },
-  /** Wrapper que reserva altura via espaçador invisível */
   subtitleContainer: {
     marginTop: 6,
-    position: "relative",
-  },
-  /** Espaçador invisível — define a altura do container */
-  subtitleSpacer: {
-    opacity: 0,
-    // pointer-events none em RN não é necessário; texto invisível já é inerte
-  },
-  /** Camada A ou B posicionada sobre o espaçador */
-  subtitleLayer: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    fontSize: 15,
-    color: "#3970c3",
-    lineHeight: 22,
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
   },
   input: {
     backgroundColor: "#fff",
@@ -176,6 +162,17 @@ export const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: "#3970c3",
   },
+  marketRowClosed: {
+    opacity: 0.6,
+  },
+  marketRowNameClosed: {
+    color: "#888",
+  },
+  marketRowClosedLabel: {
+    fontSize: 12,
+    color: "#999",
+    marginTop: 1,
+  },
   dotWrapper: {
     width: 20,
     height: 20,
@@ -247,12 +244,59 @@ export const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
   },
+  chipLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+  },
   chipLabel: {
     fontSize: 11,
     color: "#888",
     fontWeight: "600",
     textTransform: "uppercase",
-    marginBottom: 4,
+  },
+  chipHint: {
+    fontSize: 10,
+    color: "#BBBBBB",
+    fontWeight: "400",
+  },
+  // ─── Tooltip modal ───
+  tooltipOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 32,
+  },
+  tooltipCard: {
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    padding: 22,
+    width: "100%",
+    shadowColor: "#152965",
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  tooltipTitle: {
+    fontSize: 16,
+    fontFamily: "SpaceGrotesk_600SemiBold",
+    color: "#152965",
+    marginBottom: 12,
+  },
+  tooltipBody: {
+    fontSize: 14,
+    color: "#444",
+    lineHeight: 22,
+  },
+  tooltipClose: {
+    marginTop: 18,
+    alignItems: "center",
+  },
+  tooltipCloseText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#3970c3",
   },
   chipValue: {
     fontSize: 14,
@@ -280,6 +324,36 @@ export const styles = StyleSheet.create({
     color: "#AAAAAA",
     marginTop: 10,
     textAlign: "right",
+  },
+  // ─── Badges de horário ───
+  closedBadge: {
+    backgroundColor: "#F5F5F5",
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    alignSelf: "flex-start",
+    marginBottom: 12,
+  },
+  closedBadgeText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#888",
+  },
+  closingSoonBadge: {
+    backgroundColor: "#FFF4E8",
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    alignSelf: "flex-start",
+    marginBottom: 12,
+  },
+  closingSoonBadgeText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#D97706",
+  },
+  navigateBtnDisabled: {
+    backgroundColor: "#C8CDD8",
   },
   navigateBtn: {
     marginTop: 16,
