@@ -1,7 +1,7 @@
 import * as Location from "expo-location";
 import { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
+  ActivityIndicator, //teste
   Animated,
   Easing,
   Linking,
