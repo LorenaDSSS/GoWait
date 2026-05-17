@@ -14,6 +14,8 @@ import {
   View
 } from "react-native";
 import MapView, { Marker, Polyline } from "react-native-maps";
+import { FeedbackBanner } from "../../components/feedback-banner";
+import { getPendingFeedback, PendingVisit, registerClick } from "../../hooks/use-visit-feedback";
 import { FeedbackValue, SignalSource, trackFeedback, trackSignal } from "../../lib/signals";
 import { supabase } from "../../lib/supabase";
 import { styles } from "./index.styles";
@@ -532,6 +534,7 @@ export default function Home() {
   const [selectedMarket, setSelectedMarket] = useState<any>(null);
   const [loadingLocation, setLoadingLocation] = useState(true);
   const [userCoords, setUserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [pendingFeedback, setPendingFeedback] = useState<PendingVisit | null>(null);
 
   const mapRef              = useRef<MapView>(null);
   const userCoordsRef       = useRef<{ latitude: number; longitude: number } | null>(null);
@@ -612,6 +615,10 @@ export default function Home() {
         .sort((a, b) => a.dist - b.dist)
         .slice(0, NEARBY_MAX);
       setNearbyMarkets(sorted);
+
+      // Verificar se há visita pendente elegível para feedback
+      const pending = await getPendingFeedback(latitude, longitude);
+      if (pending) setPendingFeedback(pending);
     } else {
       setNearbyMarkets(enriched.slice(0, NEARBY_MAX));
     }
@@ -629,10 +636,21 @@ export default function Home() {
       flow_at_event:  market.flow        ?? null,
       score_at_event: market.crowd_score ?? null,
     });
+
+    // Registra a visita no AsyncStorage para solicitar feedback depois
+    registerClick({
+      locationId:   market.id,
+      locationName: market.name,
+      lat:          market.latitude,
+      lon:          market.longitude,
+      flow:         market.flow        ?? null,
+      score:        market.crowd_score ?? null,
+    });
+
     setSelectedMarket(market);
     mapRef.current?.animateToRegion(
       {
-        latitude: market.latitude - 0.003,
+        latitude: market.latitude,
         longitude: market.longitude,
         latitudeDelta: 0.01,
         longitudeDelta: 0.01,
@@ -838,6 +856,14 @@ export default function Home() {
           </ScrollView>
         )}
       </View>
+
+      {/* Banner de feedback pós-visita */}
+      {pendingFeedback && (
+        <FeedbackBanner
+          visit={pendingFeedback}
+          onDismiss={() => setPendingFeedback(null)}
+        />
+      )}
 
     </View>
   );

@@ -228,7 +228,15 @@ Deno.serve(async () => {
   const now        = new Date();
   const dow        = now.getDay();
   const isWeekend  = dow === 0 || dow === 6;
-  const isHoliday  = false; // TODO: integrar API de feriados
+
+  // Verificar se hoje é feriado nacional (holiday_cache)
+  const todayStr = now.toISOString().slice(0, 10); // "YYYY-MM-DD"
+  const { data: holidayRow } = await supabase
+    .from("holiday_cache")
+    .select("date")
+    .eq("date", todayStr)
+    .maybeSingle();
+  const isHoliday = holidayRow !== null;
 
   try {
     // 1. Carregar mapa de clima por município (máx 2h)

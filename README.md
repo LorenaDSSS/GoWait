@@ -15,7 +15,7 @@
 | Tecnologia | Uso |
 |---|---|
 | **Supabase** (PostgreSQL gerenciado) | Banco de dados principal, autenticação, Realtime |
-| **Supabase Edge Functions** (Deno) | Funções serverless: `weather-sync`, `location-snapshot`, `send-alert` |
+| **Supabase Edge Functions** (Deno) | Funções serverless: `weather-sync`, `location-snapshot`, `send-alert`, `holiday-sync` |
 | **Supabase Realtime** | Push de atualizações de estado para o app via WebSocket |
 | **pg_cron** (extensão PostgreSQL) | Agendamento de jobs recorrentes (snapshots, limpeza, alertas) |
 | **pg_net** (extensão PostgreSQL) | Chamadas HTTP de dentro do Postgres → Edge Functions |
@@ -30,6 +30,7 @@
 | **Overpass API** (OpenStreetMap) | Gratuito | Busca de locais físicos (`shop=supermarket\|convenience\|wholesale`) para o importador `scripts/import-locations-rj.js` |
 | **Nominatim** (OpenStreetMap) | Gratuito (1 req/s) | Geocodificação reversa — enriquece bairro e município dos locais importados |
 | **Resend** (`api.resend.com`) | Free (3k emails/mês) | Envio de emails de alerta (`send-alert`) quando retenção atinge ATENÇÃO ou CRÍTICO |
+| **BrasilAPI** (`brasilapi.com.br`) | Gratuito, sem chave | Feriados nacionais brasileiros — populado pela Edge Function `holiday-sync` anualmente |
 
 ### Ferramentas de Desenvolvimento
 
@@ -108,7 +109,7 @@ Os dados cobrem **locais físicos cadastrados manualmente** na tabela `locations
 | `wait_time` | `text` | Estimativa de espera formatada (ex: `"12 min"`) |
 | `trend` | `text` | Direção do fluxo: `subindo`, `caindo`, `estável` |
 | `is_weekend` | `bool` | Indica se o snapshot foi gerado em fim de semana |
-| `is_holiday` | `bool` | Indica se é feriado (atualmente sempre `false` — integração pendente) |
+| `is_holiday` | `bool` | Indica se é feriado — consultado em tempo real na tabela `holiday_cache` |
 | `hour_of_day` | `int` | Hora local do snapshot (0–23, fuso São Paulo) |
 | `day_of_week` | `int` | Dia da semana (0 = domingo, 6 = sábado) |
 
@@ -145,6 +146,7 @@ Com o acúmulo desses sinais, o sistema evolui de "estado atual" para "previsão
 | `click` | 60 | Usuário selecionou o local da lista |
 | `return` | 75 | Reservado para retorno ao local após dismiss |
 | `navigate` | 90 | Reservado para quando o usuário iniciar rota |
+| `feedback` | 95 | Avaliação pós-visita — prova mais forte de que o usuário foi ao local |
 
 #### Campos capturados por evento
 
@@ -175,6 +177,7 @@ Pontos de captura no app (`app/(tabs)/index.tsx`):
 | Toca em resultado da busca | `click` | `search` |
 | Fecha o dashboard (botão Voltar) | `dismiss` | origem do clique anterior |
 | Dashboard desmonta | `view` + `dwell_time_seconds` | origem do clique anterior |
+| Responde banner de feedback pós-visita | `feedback` + `feedback_value` | `nearby` |
 
 #### View analítica: `location_intent_summary`
 
@@ -200,14 +203,20 @@ Retorna: `total_signals`, `avg_intent`, `dismissals`, `navigations`, `clicks`, `
 
 #### Retenção
 
-Diferente de `location_metrics` (retém só 6 snapshots), os sinais têm **valor analítico acumulado** e são mantidos por **30 dias**. Um job pg_cron (`cleanup-signals`) roda diariamente às 03h e deleta registros mais antigos que 30 dias:
+Diferente de `location_metrics` (retém só 6 snapshots), os sinais têm **valor analítico acumulado** e são mantidos por **30 dias** (janela dinâmica — ver Governança de Dados). Um job pg_cron (`cleanup-signals`) roda diariamente às 03h e deleta registros além da janela ativa.
 
-```sql
--- Verificar se o job está ativo
-SELECT * FROM cron.job WHERE jobname = 'cleanup-signals';
-```
+#### Feedback pós-visita (`hooks/use-visit-feedback.ts`)
 
-Com 3 locais e ciclo de uso típico, estima-se um volume de ~50 mil sinais no primeiro ano — bem dentro do limite de 500 MB do plano Supabase Free. Reavaliar particionamento mensal apenas se ultrapassar 500 mil registros.
+Ao clicar em um local, o app salva a visita localmente via `AsyncStorage`. Quando o usuário reabre o app, o sistema verifica se há visita pendente elegível e exibe o banner `FeedbackBanner`:
+
+**Critérios para exibir o banner (todos devem ser verdadeiros):**
+- Tempo desde o clique ≥ 20 min e ≤ 3h
+- Usuário está a ≤ 500m do local (usando coordenadas atuais)
+- Feedback ainda não foi solicitado para essa visita
+
+**Opções de resposta:** 😌 Tranquilo · 🙂 Moderado · 😬 Cheio · Não fui
+
+"Não fui" descarta o banner sem registrar sinal — também é um dado valioso (usuário viu o score e decidiu não ir). As demais opções enviam um `feedback` event com `feedback_value` para `location_user_signals`, alimentando a Camada 4 (IA adaptativa).
 
 ---
 
@@ -387,11 +396,12 @@ Campo voltado ao usuário final que classifica o tipo de local de forma legível
 | `location_user_signals` | Interna (Supabase PostgreSQL) | Sinais de comportamento do usuário (Camada 3) |
 | `location_intelligence` | Interna (Supabase PostgreSQL) | IA adaptativa por local (Camada 4) — dormante |
 | `weather_cache` | Interna (Supabase PostgreSQL) | Cache de clima por cidade — populado pela Edge Function `weather-sync` (12 municípios do RJ) |
+| `holiday_cache` | Interna (Supabase PostgreSQL) | Cache de feriados nacionais — populado pela Edge Function `holiday-sync` via BrasilAPI (ano atual + próximo); 26 registros (2026+2027) |
 | `retention_audit_log` | Interna (Supabase PostgreSQL) | Histórico de decisões do `auto_adjust_retention()` — rastreabilidade das mudanças de janela de retenção |
 | `_app_config` | Interna (Supabase PostgreSQL) | Configurações internas restritas (ex: `service_role_key` para chamadas pg_net → Edge Functions) |
 | OpenStreetMap (Overpass API) | Externa | Fonte primária de locais — importados via `scripts/import-locations-rj.js` |
 | Nominatim (OSM Geocoding) | Externa | Geocodificação reversa para enriquecimento de bairro/município dos locais importados |
-| Feriados | **Pendente** | Integração com API de feriados brasileiros (campo `is_holiday` sempre `false` atualmente) |
+| BrasilAPI | Externa | Feriados nacionais brasileiros — consumida pela Edge Function `holiday-sync` |
 
 ---
 
@@ -402,7 +412,7 @@ Campo voltado ao usuário final que classifica o tipo de local de forma legível
 | Codebase mobile (React Native/Expo) | Time GoWait |
 | Supabase (banco, Edge Functions, Realtime) | Time GoWait |
 | Cadastro de locais em `locations` | Importação via OSM (`scripts/import-locations-rj.js`) + ajustes manuais |
-| Integração com API de feriados | **Pendente** |
+| Feriados (`holiday_cache`) | Edge Function `holiday-sync` via BrasilAPI — populada automaticamente todo ano em 1 jan |
 
 ---
 
@@ -418,6 +428,7 @@ Campo voltado ao usuário final que classifica o tipo de local de forma legível
 | `cleanup-signals` | `0 3 * * *` | Deleta sinais além da janela de retenção ativa (30d / 15d / 7d — ajustada dinamicamente) |
 | `cleanup-weather` | `0 4 * * 0` | Deleta entradas estagnadas de `weather_cache` (semanal) |
 | `auto-adjust-retention` | `30 3 1,16 * *` | Avalia volume de `location_user_signals` e reajusta retenção automaticamente (dias 1 e 16 de cada mês) |
+| `holiday-sync` | `0 6 1 1 *` | Atualiza `holiday_cache` com feriados do ano corrente + próximo via BrasilAPI (1 jan às 06h) |
 
 ```sql
 -- Verificar jobs ativos
@@ -531,7 +542,7 @@ Histórico de snapshots. Retém os **6 registros mais recentes por local** (jane
 | `hour_of_day` | `int` | Hora local (fuso São Paulo) |
 | `day_of_week` | `int` | Dia da semana (0=Dom, 6=Sáb) |
 | `is_weekend` | `bool` | Flag calculada no momento |
-| `is_holiday` | `bool` | Flag de feriado (atualmente sempre `false`) |
+| `is_holiday` | `bool` | Flag de feriado — populado via `holiday_cache` |
 | `weather` | `text` | Reservado — ainda não populado |
 | `created_at` | `timestamptz` | Timestamp automático do Supabase |
 
@@ -593,6 +604,23 @@ Cache de clima por cidade, populado pela Edge Function `weather-sync` a cada 30 
 | `fetched_at` | `timestamptz` | Timestamp da última atualização |
 
 **Impacto no score:** chuva/tempestade `+15 pts` (mais gente sai de casa para compras rápidas), calor extremo (>33°C) `+8 pts`. Registros desatualizados são limpos semanalmente pelo job `cleanup-weather`.
+
+---
+
+#### Tabela: `holiday_cache`
+
+Cache de feriados nacionais brasileiros, populado pela Edge Function `holiday-sync` via **BrasilAPI** (sem necessidade de API key). Sempre mantém o ano corrente **e o ano seguinte**, garantindo que `location-snapshot` nunca consulte um feriado inexistente.
+
+| Coluna | Tipo | Descrição |
+|---|---|---|
+| `date` | `date` PK | Data do feriado (ex: `2026-06-04`) |
+| `name` | `text` | Nome do feriado (ex: `"Corpus Christi"`) |
+
+**Estado atual:** 26 registros (13 feriados × 2 anos: 2026 + 2027).
+
+**Cron:** `0 6 1 1 *` — roda em 1 jan às 06h, busca feriados do ano corrente + próximo, faz upsert. Auto-manutenível sem intervenção manual.
+
+**Uso em `location-snapshot`:** a cada snapshot, a função consulta `holiday_cache` com a data atual (`.maybeSingle()`). Se encontrar registro, `is_holiday = true` → `+25 pts` no `crowd_score`.
 
 ---
 
