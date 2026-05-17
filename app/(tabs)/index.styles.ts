@@ -352,8 +352,14 @@ export const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#D97706",
   },
-  navigateBtnDisabled: {
-    backgroundColor: "#C8CDD8",
+  closedPlaceholder: {
+    paddingVertical: 20,
+    paddingHorizontal: 4,
+  },
+  closedPlaceholderText: {
+    fontSize: 13,
+    color: "#AAAAAA",
+    lineHeight: 20,
   },
   navigateBtn: {
     marginTop: 16,

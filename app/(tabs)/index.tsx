@@ -187,6 +187,21 @@ function getFlowLabel(flow: string) {
   if (flow === "alto")  return "Intenso";
   return "—";
 }
+
+// Snapshot stale = local aberto mas o último snapshot é anterior ao horário de abertura de hoje
+function isMarketDataStale(market: any, isClosed: boolean): boolean {
+  if (isClosed) return false;
+  const snapshotDate = market.last_snapshot_at ? new Date(market.last_snapshot_at) : null;
+  if (!snapshotDate) return false;
+  const hours = market.opening_hours as Record<string, any> | null;
+  const DAYS  = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+  const now   = new Date();
+  const day   = hours?.[DAYS[now.getDay()]] ?? hours?.["default"];
+  if (!day?.open) return false;
+  const [oh, om] = (day.open as string).split(":").map(Number);
+  const openToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), oh, om, 0);
+  return snapshotDate < openToday;
+}
 function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -301,13 +316,15 @@ type MarketRowProps = { item: any; isSelected: boolean; onPress: () => void };
 function MarketRow({ item, isSelected, onPress }: MarketRowProps) {
   const locStatus = getLocationStatus(item);
   const closed    = locStatus.status === "closed";
+  const stale     = isMarketDataStale(item, closed);
+  const dotColor  = closed || stale ? "#C8CDD8" : getFlowColor(item.flow);
   return (
     <TouchableOpacity
       style={[styles.marketRow, isSelected && styles.marketRowActive, closed && styles.marketRowClosed]}
       onPress={onPress}
       activeOpacity={0.7}
     >
-      <PulsingDot color={closed ? "#C8CDD8" : getFlowColor(item.flow)} />
+      <PulsingDot color={dotColor} />
       <View style={styles.marketRowText}>
         <Text style={[styles.marketRowName, closed && styles.marketRowNameClosed]}>{item.name}</Text>
         {closed ? (
@@ -341,6 +358,8 @@ function MarketDashboard({ market, source }: MarketDashboardProps) {
   const [localFeedback, setLocalFeedback] = useState<FeedbackValue | null>(null);
   const locationStatus = getLocationStatus(market);
   const isClosed       = locationStatus.status === "closed";
+
+  const isSnapshotStale = isMarketDataStale(market, isClosed);
 
   // Registra dwell time quando o dashboard é fechado
   useEffect(() => {
@@ -379,32 +398,49 @@ function MarketDashboard({ market, source }: MarketDashboardProps) {
         )}
 
         <Text style={styles.reportName}>{market.name}</Text>
-        <View style={styles.reportRow}>
-          <ChipWithTooltip
-            label="Fluxo"
-            value={getFlowLabel(market.flow ?? "")}
-            valueColor={getFlowColor(market.flow)}
-            tooltipKey="fluxo"
-          />
-          <ChipWithTooltip
-            label="Tendência"
-            value={market.trend ?? "—"}
-            tooltipKey="tendencia"
-          />
-          {(market.intelligence_score ?? market.crowd_score) != null && (
-            <ChipWithTooltip
-              label={market.intelligence_score != null ? "Score IA" : "Score"}
-              value={`${(market.intelligence_score ?? market.crowd_score)}/100`}
-              valueColor={getFlowColor(market.flow)}
-              tooltipKey={market.intelligence_score != null ? "scoreIA" : "score"}
-            />
-          )}
-        </View>
-        <View style={styles.divider} />
-        <Text style={styles.reportDecision}>{getDecision(market.flow ?? "")}</Text>
-        <Text style={styles.reportWait}>
-          {"⏱ " + getWaitMessage(market.flow ?? "", market.wait_time ?? "")}
-        </Text>
+
+        {isClosed ? (
+          <View style={styles.closedPlaceholder}>
+            <Text style={styles.closedPlaceholderText}>
+              As informações de fluxo estarão disponíveis quando o local abrir.
+            </Text>
+          </View>
+        ) : isSnapshotStale ? (
+          <View style={styles.closedPlaceholder}>
+            <Text style={styles.closedPlaceholderText}>
+              O local acabou de abrir. Dados sendo calculados — disponíveis em até 15 min.
+            </Text>
+          </View>
+        ) : (
+          <>
+            <View style={styles.reportRow}>
+              <ChipWithTooltip
+                label="Fluxo"
+                value={getFlowLabel(market.flow ?? "")}
+                valueColor={getFlowColor(market.flow)}
+                tooltipKey="fluxo"
+              />
+              <ChipWithTooltip
+                label="Tendência"
+                value={market.trend ?? "—"}
+                tooltipKey="tendencia"
+              />
+              {(market.intelligence_score ?? market.crowd_score) != null && (
+                <ChipWithTooltip
+                  label={market.intelligence_score != null ? "Score IA" : "Score"}
+                  value={`${(market.intelligence_score ?? market.crowd_score)}/100`}
+                  valueColor={getFlowColor(market.flow)}
+                  tooltipKey={market.intelligence_score != null ? "scoreIA" : "score"}
+                />
+              )}
+            </View>
+            <View style={styles.divider} />
+            <Text style={styles.reportDecision}>{getDecision(market.flow ?? "")}</Text>
+            <Text style={styles.reportWait}>
+              {"⏱ " + getWaitMessage(market.flow ?? "", market.wait_time ?? "")}
+            </Text>
+          </>
+        )}
 
         {/* Relato inline — só exibido quando o local está aberto */}
         {!isClosed && (
@@ -447,25 +483,26 @@ function MarketDashboard({ market, source }: MarketDashboardProps) {
           </View>
         )}
 
-        {/* CTA principal — desabilitado se fechado */}
-        <TouchableOpacity
-          style={[styles.navigateBtn, isClosed && styles.navigateBtnDisabled]}
-          activeOpacity={isClosed ? 1 : 0.82}
-          disabled={isClosed}
-          onPress={() => {
-            trackSignal({
-              location_id:    market.id,
-              event_type:     "navigate",
-              source,
-              flow_at_event:  market.flow        ?? null,
-              score_at_event: market.crowd_score ?? null,
-            });
-            const url = `https://www.google.com/maps/dir/?api=1&destination=${market.latitude},${market.longitude}&travelmode=walking`;
-            Linking.openURL(url);
-          }}
-        >
-          <Text style={styles.navigateBtnText}>Ir agora</Text>
-        </TouchableOpacity>
+        {/* CTA principal — oculto se fechado */}
+        {!isClosed && (
+          <TouchableOpacity
+            style={styles.navigateBtn}
+            activeOpacity={0.82}
+            onPress={() => {
+              trackSignal({
+                location_id:    market.id,
+                event_type:     "navigate",
+                source,
+                flow_at_event:  market.flow        ?? null,
+                score_at_event: market.crowd_score ?? null,
+              });
+              const url = `https://www.google.com/maps/dir/?api=1&destination=${market.latitude},${market.longitude}&travelmode=walking`;
+              Linking.openURL(url);
+            }}
+          >
+            <Text style={styles.navigateBtnText}>Ir agora</Text>
+          </TouchableOpacity>
+        )}
 
         {snapshotTime && (
           <Text style={styles.snapshotTime}>Atualizado às {snapshotTime}</Text>
@@ -645,24 +682,30 @@ export default function Home() {
       {/* Resultados de busca — dropdown compacto acima do mapa */}
       {isSearching && results.length > 0 && (
         <View style={styles.searchResults}>
-          {results.map((item) => (
-            <TouchableOpacity
-              key={String(item.id)}
-              style={[
-                styles.searchResultRow,
-                selectedMarket?.id === item.id && styles.searchResultRowActive,
-              ]}
-              onPress={() => {
-                setSearch(item.name);
-                setResults([]);
-                handleSelect(item, "search");
-              }}
-              activeOpacity={0.7}
-            >
-              <PulsingDot color={getFlowColor(item.flow)} />
-              <Text style={styles.searchResultName}>{item.name}</Text>
-            </TouchableOpacity>
-          ))}
+          {results.map((item) => {
+              const locStatus = getLocationStatus(item);
+              const closed    = locStatus.status === "closed";
+              const stale     = isMarketDataStale(item, closed);
+              const dotColor  = closed || stale ? "#C8CDD8" : getFlowColor(item.flow);
+              return (
+                <TouchableOpacity
+                  key={String(item.id)}
+                  style={[
+                    styles.searchResultRow,
+                    selectedMarket?.id === item.id && styles.searchResultRowActive,
+                  ]}
+                  onPress={() => {
+                    setSearch(item.name);
+                    setResults([]);
+                    handleSelect(item, "search");
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <PulsingDot color={dotColor} />
+                  <Text style={styles.searchResultName}>{item.name}</Text>
+                </TouchableOpacity>
+              );
+            })}
         </View>
       )}
 
