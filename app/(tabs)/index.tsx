@@ -169,8 +169,8 @@ function getDecision(flow: string) {
 }
 
 function getWaitMessage(flow: string, waitTime: string) {
-  if (flow === "baixo") return "Sem espera prevista, pode ir!";
-  return `Você deve esperar cerca de ${waitTime} para chegar ao local`;
+  if (flow === "baixo") return "Costuma ser rápido, pode ir!";
+  return `Espera estimada de ${waitTime} no local`;
 }
 
 // Paleta GoWait — extraída da logo
@@ -254,16 +254,10 @@ const CHIP_INFO: Record<string, ChipTooltip> = {
   },
   score: {
     title: "Score",
-    body: "Pontuação de lotação estimada, de 0 a 100.\n\n" +
-      "Calculada com base no horário, dia da semana, tipo e tamanho do local.",
-  },
-  scoreIA: {
-    title: "Score IA",
-    body: "Pontuação inteligente que combina três fontes:\n\n" +
-      "• Previsão heurística (horário, dia, tipo de local)\n" +
-      "• Comportamento real dos usuários (cliques, tempo de visualização)\n" +
-      "• Relatos diretos de quem visitou o local\n\n" +
-      "Quanto mais pessoas interagem, mais preciso fica.",
+    body: "Pontuação de lotação de 0 a 100, recalculada a cada 15 min.\n\n" +
+      "Combina horário, dia da semana, perfil e porte do local, clima e sazonalidade " +
+      "para estimar o fluxo com precisão. Conforme mais pessoas interagem, incorpora " +
+      "também o comportamento real de visitantes e relatos diretos.",
   },
 };
 
@@ -344,9 +338,9 @@ function MarketRow({ item, isSelected, onPress }: MarketRowProps) {
 // ─── Opções de relato inline ─────────────────────────────────────────────────
 
 const FEEDBACK_OPTIONS: { value: FeedbackValue; label: string; color: string }[] = [
-  { value: "vazio",  label: "Vazio",  color: "#50b1d6" },
-  { value: "normal", label: "Normal", color: "#b399e9" },
-  { value: "cheio",  label: "Cheio",  color: "#fabf97" },
+  { value: "tranquilo", label: "Tranquilo", color: "#50b1d6" },
+  { value: "moderado",  label: "Moderado",  color: "#b399e9" },
+  { value: "cheio",     label: "Cheio",     color: "#fabf97" },
 ];
 
 // ─── Dashboard do local selecionado ─────────────────────────────────────────
@@ -425,12 +419,12 @@ function MarketDashboard({ market, source }: MarketDashboardProps) {
                 value={market.trend ?? "—"}
                 tooltipKey="tendencia"
               />
-              {(market.intelligence_score ?? market.crowd_score) != null && (
+              {market.crowd_score != null && (
                 <ChipWithTooltip
-                  label={market.intelligence_score != null ? "Score IA" : "Score"}
-                  value={`${(market.intelligence_score ?? market.crowd_score)}/100`}
+                  label="Score"
+                  value={`${market.crowd_score}/100`}
                   valueColor={getFlowColor(market.flow)}
-                  tooltipKey={market.intelligence_score != null ? "scoreIA" : "score"}
+                  tooltipKey="score"
                 />
               )}
             </View>

@@ -41,3 +41,11 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Supabase
+supabase/.temp/
+
+# Editor swap files
+*.swp
+*.swo
+*~
